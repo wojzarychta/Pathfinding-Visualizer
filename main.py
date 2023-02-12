@@ -1,3 +1,6 @@
+import heapq as heap
+import sys
+from collections import defaultdict
 import pygame
 
 # CONSTANTS
@@ -10,6 +13,7 @@ GREY = (169, 169, 169)
 LIGHT_BLUE = (73, 221, 235)
 BLUE = (35, 179, 232)
 GREEN = (52, 227, 110)
+ORANGE = (255, 94, 5)
 
 dis = pygame.display.set_mode((DIS_WIDTH, DIS_HEIGHT))
 pygame.display.set_caption('Pathfinding visualizer')
@@ -23,6 +27,7 @@ class Cell:
         self.height = height
         self.pos = (col * self.width, row * self.height)
         self.color = WHITE
+        self.visited = False
         self.neighbours = []
 
     def draw_cell(self):
@@ -32,7 +37,7 @@ class Cell:
         self.color = BLACK
 
     def is_wall(self):
-        return  self.color == BLACK
+        return self.color == BLACK
 
     def set_start(self):
         self.color = LIGHT_BLUE
@@ -43,18 +48,33 @@ class Cell:
     def is_empty(self):
         return self.color == WHITE
 
+    def set_visited(self):
+        self.visited = True
+        self.color = GREEN
+
+    def set_active(self):
+        self.color = (0, 255, 0)
+
+    def set_path(self):
+        self.color = ORANGE
+
     def reset(self):
         self.color = WHITE
+        self.visited = False
+        self.neighbours = []
 
     def add_neighbours(self, grid, rows, cols):
         if self.row > 0 and not grid[self.row - 1][self.col].is_wall():  # upper neighbour
             self.neighbours.append(grid[self.row - 1][self.col])
-        if self.row < rows - 1 and not grid[self.row + 1][self.col].is_wall():  # bottom neighbour
-            self.neighbours.append(grid[self.row - 1][self.col])
-        if self.col > 0 and not grid[self.row][self.col - 1].is_wall():  # left neighbour
-            self.neighbours.append(grid[self.row][self.col - 1])
         if self.col < cols - 1 and not grid[self.row][self.col + 1].is_wall():  # right neighbour
             self.neighbours.append(grid[self.row][self.col + 1])
+        if self.row < rows - 1 and not grid[self.row + 1][self.col].is_wall():  # bottom neighbour
+            self.neighbours.append(grid[self.row + 1][self.col])
+        if self.col > 0 and not grid[self.row][self.col - 1].is_wall():  # left neighbour
+            self.neighbours.append(grid[self.row][self.col - 1])
+
+    def __lt__(self, other):
+        return False
 
 
 class Grid:
@@ -107,10 +127,95 @@ def get_clicked_cell(grid: Grid):
     return row, col
 
 
+def DFS(v: Cell, target: Cell):
+    if v == target:
+        draw_path(start, target)
+        return True
+    v.set_visited()
+    grid.draw_grid()
+    pygame.display.update()
+    for neighbour in v.neighbours:
+        if not neighbour.visited:
+            path[neighbour] = v
+            if DFS(neighbour, target):
+                return True
+    return False
+
+
+def BFS(start: Cell, target: Cell):
+    queue = [start]
+    visited = set()
+    visited.add(start)
+    while queue:
+        v = queue.pop(0)
+        if v == target:
+            draw_path(start, target)
+            target.set_finish()
+            return
+
+        for neighbour in v.neighbours:
+            if neighbour not in visited:
+                visited.add(neighbour)
+                path[neighbour] = v
+                queue.append(neighbour)
+                neighbour.set_active()
+
+        grid.draw_grid()
+        pygame.display.update()
+
+        if v != start:
+            v.set_visited()
+
+
+def dijkstra(start: Cell, target: Cell):
+    visited = set()
+    pq = []
+    node_costs = defaultdict(lambda: int(sys.maxsize))
+    node_costs[start] = 0
+    heap.heappush(pq, (0, start))
+
+    while pq:
+        _, v = heap.heappop(pq)
+        visited.add(v)
+
+        if v == target:
+            draw_path(start, target)
+            return
+
+        for neighbour in v.neighbours:
+            if neighbour in visited:
+                continue
+
+            new_cost = node_costs[v] + 1
+            if node_costs[neighbour] > new_cost:
+                path[neighbour] = v
+                node_costs[neighbour] = new_cost
+                heap.heappush(pq, (new_cost, neighbour))
+                neighbour.set_active()
+
+            if v != start:
+                v.set_visited()
+
+            grid.draw_grid()
+            pygame.display.update()
+
+
+def draw_path(start, target):
+    target.set_finish()
+    curr = target
+    while curr != start:
+        curr.set_path()
+        curr = path[curr]
+        grid.draw_grid()
+        pygame.display.update()
+    start.set_start()
+
+
 if __name__ == '__main__':
     grid = Grid(DIS_WIDTH, DIS_HEIGHT, 40, 40)
     start = None
     finish = None
+    path = {}
     while True:
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
@@ -140,15 +245,27 @@ if __name__ == '__main__':
                     cell.reset()
 
             if event.type == pygame.KEYDOWN:
-                if event.key == pygame.K_SPACE:  # start algorithm
-                    pass
-                elif event.key == pygame.K_c:
+
+                if event.key == pygame.K_c:  # clear board
                     start = None
                     finish = None
                     grid.reset()
+                    path = {}
+
+                elif event.key == pygame.K_r:  # reset board without wiping walls
+                    pass
 
                 elif event.key == pygame.K_d:  # DFS algorithm
                     grid.update_graph()
+                    DFS(start, finish)
+
+                elif event.key == pygame.K_b:
+                    grid.update_graph()
+                    BFS(start, finish)
+
+                elif event.key == pygame.K_s:
+                    grid.update_graph()
+                    dijkstra(start, finish)
 
         grid.draw_grid()
         pygame.display.update()
